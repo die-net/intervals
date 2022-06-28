@@ -13,7 +13,31 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func TestExpected(t *testing.T) {
+func TestSearchExpected(t *testing.T) {
+	tests := []struct {
+		intervals Intervals
+		offset    int64
+		expected  Interval
+		ok        bool
+	}{
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: -1, expected: Interval{0, 0}, ok: false},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 0, expected: Interval{0, 2}, ok: true},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 1, expected: Interval{0, 2}, ok: true},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 2, expected: Interval{0, 2}, ok: true},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 3, expected: Interval{0, 0}, ok: false},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 4, expected: Interval{4, 5}, ok: true},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 5, expected: Interval{4, 5}, ok: true},
+		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 6, expected: Interval{0, 0}, ok: false},
+	}
+
+	for _, test := range tests {
+		v, ok := test.intervals.Search(test.offset)
+		assert.Equal(t, test.expected, v)
+		assert.Equal(t, test.ok, ok)
+	}
+}
+
+func TestInsertExpected(t *testing.T) {
 	tests := []struct {
 		inserts  Intervals
 		expected Intervals
@@ -43,7 +67,7 @@ func TestExpected(t *testing.T) {
 	}
 }
 
-func TestRandom(t *testing.T) {
+func TestInsertRandom(t *testing.T) {
 	for n := 0; n < 1000; n++ {
 		vs := Intervals{}
 		count := rand.Intn(10) + 1
@@ -86,7 +110,7 @@ func TestRandom(t *testing.T) {
 	}
 }
 
-func TestPanic(t *testing.T) {
+func TestInsertPanic(t *testing.T) {
 	// End before start should panic.
 	assert.Panics(t, func() { Intervals{}.Insert(Interval{2, 1}) })
 }
