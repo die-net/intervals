@@ -4,18 +4,26 @@ package intervals
 
 import (
 	"sort"
+
+	"golang.org/x/exp/constraints"
 )
 
-// Interval represents range of the form [Start, End), which contains all
-// integer x in Start <= x < End.
-type Interval struct {
-	Start int64
-	End   int64
+// Interval represents a range of the form `[Start, End)`, which contains
+// all x in Start <= x < End.  x can be any type that is ordered, including
+// the various sizes of int, uint, float types, uintptr and string.
+//
+// If T is a float, neither Start nor End can be NaN, since NaN is not
+// ordered.
+type Interval[T constraints.Ordered] struct {
+	Start T
+	End   T
 }
 
 // Empty returns true if Start is less than end, false if they are equal,
 // and panics if Start is greater than End.
-func (v Interval) Empty() bool {
+//
+// If T is a float and Start and/or End are NaN, this will return true.
+func (v Interval[T]) Empty() bool {
 	if v.Start < v.End {
 		return false
 	}
@@ -27,32 +35,38 @@ func (v Interval) Empty() bool {
 	return true
 }
 
-// Intervals is an ordered representation of a slice of Interval.
-type Intervals []Interval
+// Intervals is an ascending ordered representation of a slice of
+// non-overlapping Interval.
+type Intervals[T constraints.Ordered] []Interval[T]
 
 // Search will return the Interval in the given Intervals containing the
 // value of off and true if found.  Otherwise, it will return an empty
-// Interval and false.
-func (ivs Intervals) Search(off int64) (Interval, bool) {
+// Interval and false.  ivs must be correctly ordered.
+//
+// Search is not safe for concurrent access with Interval; add a read lock
+// if necessary.
+func (ivs Intervals[T]) Search(off T) (Interval[T], bool) {
 	// Skip search if we definitely don't contain offset.
 	if len(ivs) == 0 || ivs[0].Start > off || ivs[len(ivs)-1].End < off {
-		return Interval{}, false
+		return Interval[T]{}, false
 	}
 
-	// Find the first interval that matches, whose end is at least off.
-	i := sort.Search(len(ivs), func(i int) bool { return ivs[i].End >= off })
+	// Find the first interval that matches, whose end is greater than offset.
+	i := sort.Search(len(ivs), func(i int) bool { return ivs[i].End > off })
 	if i < len(ivs) && ivs[i].Start <= off {
 		return ivs[i], true
 	}
 
-	return Interval{}, false
+	return Interval[T]{}, false
 }
 
 // Insert adds a given Interval to Intervals, possibly inserting in the
 // correct order between two intervals, extending an existing interval, or
 // compacting existing intervals as necessary.  ivs must be correctly
 // ordered.  An empty v will result in a noop, and an invalid v may panic.
-func (ivs Intervals) Insert(v Interval) Intervals {
+//
+// Insert is not safe for concurrent access; add a lock if necessary.
+func (ivs Intervals[T]) Insert(v Interval[T]) Intervals[T] {
 	if v.Empty() {
 		return ivs
 	}
@@ -79,7 +93,7 @@ func (ivs Intervals) Insert(v Interval) Intervals {
 	// "after".
 	outlen := skip + 1 + len(after)
 	if outlen > cap(ivs) {
-		ovs := make(Intervals, outlen, outlen*2)
+		ovs := make(Intervals[T], outlen, outlen*2)
 
 		copy(ovs, ivs[:skip])
 		ovs[skip] = v
