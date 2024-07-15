@@ -1,33 +1,55 @@
 package intervals
 
 import (
+	"math"
 	"math/rand"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
+func TestEmpty(t *testing.T) {
+	tests := []struct {
+		interval Interval[float64]
+		empty    bool
+	}{
+		{interval: Interval[float64]{0.0, 0.0}, empty: true},
+		{interval: Interval[float64]{math.Copysign(0, -1), +0.0}, empty: true},
+		{interval: Interval[float64]{0.0, math.SmallestNonzeroFloat64}, empty: false},
+		{interval: Interval[float64]{0.0, 1.0}, empty: false},
+		{interval: Interval[float64]{-1.0, -1.0}, empty: true},
+		{interval: Interval[float64]{-1.0, 0.0}, empty: false},
+		{interval: Interval[float64]{math.Inf(-1), -1}, empty: false},
+		{interval: Interval[float64]{1, math.Inf(1)}, empty: false},
+
+		// NaN can't be compared to anything
+		{interval: Interval[float64]{math.NaN(), 1}, empty: true},
+		{interval: Interval[float64]{1, math.NaN()}, empty: true},
+		{interval: Interval[float64]{math.NaN(), math.NaN()}, empty: true},
+	}
+
+	for _, test := range tests {
+		empty := test.interval.Empty()
+		assert.Equal(t, test.empty, empty)
+	}
 }
 
 func TestSearchExpected(t *testing.T) {
 	tests := []struct {
-		intervals Intervals
+		intervals Intervals[int64]
 		offset    int64
-		expected  Interval
+		expected  Interval[int64]
 		ok        bool
 	}{
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: -1, expected: Interval{0, 0}, ok: false},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 0, expected: Interval{0, 2}, ok: true},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 1, expected: Interval{0, 2}, ok: true},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 2, expected: Interval{0, 2}, ok: true},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 3, expected: Interval{0, 0}, ok: false},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 4, expected: Interval{4, 5}, ok: true},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 5, expected: Interval{4, 5}, ok: true},
-		{intervals: Intervals{{0, 2}, {4, 5}}, offset: 6, expected: Interval{0, 0}, ok: false},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: -1, expected: Interval[int64]{0, 0}, ok: false},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 0, expected: Interval[int64]{0, 2}, ok: true},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 1, expected: Interval[int64]{0, 2}, ok: true},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 2, expected: Interval[int64]{0, 0}, ok: false},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 3, expected: Interval[int64]{0, 0}, ok: false},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 4, expected: Interval[int64]{4, 5}, ok: true},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 5, expected: Interval[int64]{0, 0}, ok: false},
+		{intervals: Intervals[int64]{{0, 2}, {4, 5}}, offset: 6, expected: Interval[int64]{0, 0}, ok: false},
 	}
 
 	for _, test := range tests {
@@ -39,29 +61,29 @@ func TestSearchExpected(t *testing.T) {
 
 func TestInsertExpected(t *testing.T) {
 	tests := []struct {
-		inserts  Intervals
-		expected Intervals
+		inserts  Intervals[int64]
+		expected Intervals[int64]
 	}{
 		// Merge two adjacent things
-		{inserts: Intervals{{0, 2}, {2, 3}}, expected: Intervals{{0, 3}}},
+		{inserts: Intervals[int64]{{0, 2}, {2, 3}}, expected: Intervals[int64]{{0, 3}}},
 		// Same thing, reversed
-		{inserts: Intervals{{2, 3}, {0, 2}}, expected: Intervals{{0, 3}}},
+		{inserts: Intervals[int64]{{2, 3}, {0, 2}}, expected: Intervals[int64]{{0, 3}}},
 		// A gap shouldn't be merged
-		{inserts: Intervals{{0, 4}, {5, 8}, {10, 12}}, expected: Intervals{{0, 4}, {5, 8}, {10, 12}}},
+		{inserts: Intervals[int64]{{0, 4}, {5, 8}, {10, 12}}, expected: Intervals[int64]{{0, 4}, {5, 8}, {10, 12}}},
 		// Filling in the gap should work fine
-		{inserts: Intervals{{2, 6}, {9, 11}, {6, 9}}, expected: Intervals{{2, 11}}},
+		{inserts: Intervals[int64]{{2, 6}, {9, 11}, {6, 9}}, expected: Intervals[int64]{{2, 11}}},
 		// Replacing some or all of them is fine
-		{inserts: Intervals{{1, 4}, {10, 12}, {4, 16}}, expected: Intervals{{1, 16}}},
-		{inserts: Intervals{{0, 3}, {10, 12}, {2, 12}}, expected: Intervals{{0, 12}}},
-		{inserts: Intervals{{1, 4}, {10, 12}, {0, 7}}, expected: Intervals{{0, 7}, {10, 12}}},
+		{inserts: Intervals[int64]{{1, 4}, {10, 12}, {4, 16}}, expected: Intervals[int64]{{1, 16}}},
+		{inserts: Intervals[int64]{{0, 3}, {10, 12}, {2, 12}}, expected: Intervals[int64]{{0, 12}}},
+		{inserts: Intervals[int64]{{1, 4}, {10, 12}, {0, 7}}, expected: Intervals[int64]{{0, 7}, {10, 12}}},
 		// Inserting nothing gets nothing
-		{inserts: Intervals{{12, 12}}, expected: Intervals{}},
+		{inserts: Intervals[int64]{{12, 12}}, expected: Intervals[int64]{}},
 	}
 
 	for _, test := range tests {
-		vs := Intervals{}
+		vs := Intervals[int64]{}
 		for _, v := range test.inserts {
-			vs = vs.Insert(Interval{v.Start, v.End})
+			vs = vs.Insert(Interval[int64]{v.Start, v.End})
 		}
 		assert.Equal(t, test.expected, vs)
 	}
@@ -69,14 +91,14 @@ func TestInsertExpected(t *testing.T) {
 
 func TestInsertRandom(t *testing.T) {
 	for n := 0; n < 1000; n++ {
-		vs := Intervals{}
+		vs := Intervals[int64]{}
 		count := rand.Intn(10) + 1
 		start := int64(10000)
 		end := int64(-1)
 		for i := 0; i < count; i++ {
 			s := rand.Int63n(1024)
 			e := s + rand.Int63n(128)
-			v := Interval{s, e}
+			v := Interval[int64]{s, e}
 			vs = vs.Insert(v)
 
 			if s == e {
@@ -112,7 +134,7 @@ func TestInsertRandom(t *testing.T) {
 
 func TestInsertPanic(t *testing.T) {
 	// End before start should panic.
-	assert.Panics(t, func() { Intervals{}.Insert(Interval{2, 1}) })
+	assert.Panics(t, func() { Intervals[int64]{}.Insert(Interval[int64]{2, 1}) })
 }
 
 func BenchmarkInsertNonOverlapping(b *testing.B) {
@@ -128,18 +150,16 @@ func benchInsert(b *testing.B, step, overlap int64) {
 	for _, num := range []int{1, 10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(num), func(sb *testing.B) {
 			sb.RunParallel(func(pb *testing.PB) {
-				r := rand.New(rand.NewSource(time.Now().UnixNano()))
+				ovs := make(Intervals[int64], 0, num)
 
-				ovs := make(Intervals, 0, num)
-
-				ivs := make(Intervals, num)
+				ivs := make(Intervals[int64], num)
 				n := len(ivs)
 
 				for pb.Next() {
 					n++
 					if n >= len(ivs) {
 						ovs = ovs[:0]
-						randIntervals(r, ivs, step, overlap)
+						randIntervals(ivs, step, overlap)
 						n = 0
 					}
 
@@ -150,22 +170,22 @@ func benchInsert(b *testing.B, step, overlap int64) {
 	}
 }
 
-func randIntervals(r *rand.Rand, vs Intervals, step, overlap int64) {
+func randIntervals(vs Intervals[int64], step, overlap int64) {
 	s := int64(0)
 	for i := 0; i < len(vs); i++ {
-		l := r.Int63n(step)
+		l := rand.Int63n(step)
 		e := s + l
 
-		v := Interval{s, e}
+		v := Interval[int64]{s, e}
 		if overlap > 0 {
-			v.End += r.Int63n(overlap)
+			v.End += rand.Int63n(overlap)
 		}
 		vs[i] = v
 
 		s = e
 	}
 
-	r.Shuffle(len(vs), func(i, j int) {
+	rand.Shuffle(len(vs), func(i, j int) {
 		vs[i], vs[j] = vs[j], vs[i]
 	})
 }
