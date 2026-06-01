@@ -3,9 +3,8 @@
 package intervals
 
 import (
+	"cmp"
 	"sort"
-
-	"golang.org/x/exp/constraints"
 )
 
 // Interval represents a range of the form `[Start, End)`, which contains
@@ -14,7 +13,7 @@ import (
 //
 // If T is a float, neither Start nor End can be NaN, since NaN is not
 // ordered.
-type Interval[T constraints.Ordered] struct {
+type Interval[T cmp.Ordered] struct {
 	Start T
 	End   T
 }
@@ -37,7 +36,7 @@ func (v Interval[T]) Empty() bool {
 
 // Intervals is an ascending ordered representation of a slice of
 // non-overlapping Interval.
-type Intervals[T constraints.Ordered] []Interval[T]
+type Intervals[T cmp.Ordered] []Interval[T]
 
 // Search will return the Interval in the given Intervals containing the
 // value of off and true if found.  Otherwise, it will return an empty

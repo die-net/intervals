@@ -2,11 +2,10 @@ package intervals
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"strconv"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestEmpty(t *testing.T) {
@@ -30,8 +29,9 @@ func TestEmpty(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		empty := test.interval.Empty()
-		assert.Equal(t, test.empty, empty)
+		if empty := test.interval.Empty(); empty != test.empty {
+			t.Errorf("Empty(%v) = %v, want %v", test.interval, empty, test.empty)
+		}
 	}
 }
 
@@ -54,8 +54,9 @@ func TestSearchExpected(t *testing.T) {
 
 	for _, test := range tests {
 		v, ok := test.intervals.Search(test.offset)
-		assert.Equal(t, test.expected, v)
-		assert.Equal(t, test.ok, ok)
+		if v != test.expected || ok != test.ok {
+			t.Errorf("%v.Search(%d) = (%v, %v), want (%v, %v)", test.intervals, test.offset, v, ok, test.expected, test.ok)
+		}
 	}
 }
 
@@ -85,19 +86,21 @@ func TestInsertExpected(t *testing.T) {
 		for _, v := range test.inserts {
 			vs = vs.Insert(Interval[int64]{v.Start, v.End})
 		}
-		assert.Equal(t, test.expected, vs)
+		if !slices.Equal(vs, test.expected) {
+			t.Errorf("inserting %v = %v, want %v", test.inserts, vs, test.expected)
+		}
 	}
 }
 
 func TestInsertRandom(t *testing.T) {
-	for n := 0; n < 1000; n++ {
+	for range 1000 {
 		vs := Intervals[int64]{}
-		count := rand.Intn(10) + 1
+		count := rand.IntN(10) + 1 //nolint:gosec // Not security sensitive.
 		start := int64(10000)
 		end := int64(-1)
-		for i := 0; i < count; i++ {
-			s := rand.Int63n(1024)
-			e := s + rand.Int63n(128)
+		for range count {
+			s := rand.Int64N(1024)    //nolint:gosec // Not security sensitive.
+			e := s + rand.Int64N(128) //nolint:gosec // Not security sensitive.
 			v := Interval[int64]{s, e}
 			vs = vs.Insert(v)
 
@@ -109,24 +112,32 @@ func TestInsertRandom(t *testing.T) {
 			if s < start {
 				start = s
 			}
-			assert.Equal(t, start, vs[0].Start)
+			if vs[0].Start != start {
+				t.Fatalf("vs[0].Start = %d, want %d", vs[0].Start, start)
+			}
 
 			// Track our own idea of the last end and verify it.
 			if e > end {
 				end = e
 			}
-			assert.Equal(t, end, vs[len(vs)-1].End)
+			if vs[len(vs)-1].End != end {
+				t.Fatalf("vs[%d].End = %d, want %d", len(vs)-1, vs[len(vs)-1].End, end)
+			}
 		}
 
-		assert.LessOrEqual(t, len(vs), count)
+		if len(vs) > count {
+			t.Fatalf("len(vs) = %d, want <= %d", len(vs), count)
+		}
 
-		for i := 0; i < len(vs); i++ {
+		for i := range vs {
 			// Make sure each of the records looks legit.
-			assert.Less(t, vs[i].Start, vs[i].End)
+			if vs[i].Start >= vs[i].End {
+				t.Fatalf("vs[%d] = %v, want Start < End", i, vs[i])
+			}
 
 			// And there's a gap to the next one.
-			if i < len(vs)-1 {
-				assert.Less(t, vs[i].End, vs[i+1].Start)
+			if i < len(vs)-1 && vs[i].End >= vs[i+1].Start {
+				t.Fatalf("vs[%d].End = %d >= vs[%d].Start = %d, want a gap", i, vs[i].End, i+1, vs[i+1].Start)
 			}
 		}
 	}
@@ -134,21 +145,37 @@ func TestInsertRandom(t *testing.T) {
 
 func TestInsertPanic(t *testing.T) {
 	// End before start should panic.
-	assert.Panics(t, func() { Intervals[int64]{}.Insert(Interval[int64]{2, 1}) })
+	assertPanics(t, func() { Intervals[int64]{}.Insert(Interval[int64]{2, 1}) })
 }
 
-func BenchmarkInsertNonOverlapping(b *testing.B) {
-	benchInsert(b, 1024, 0)
+// assertPanics fails the test if fn does not panic when called.
+func assertPanics(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic, but function returned normally")
+		}
+	}()
+	fn()
+}
+
+func BenchmarkInsertDisjoint(b *testing.B) {
+	benchInsert(b, 1024, 1, 0)
+}
+
+func BenchmarkInsertMergeable(b *testing.B) {
+	benchInsert(b, 1024, 0, 0)
 }
 
 func BenchmarkInsertOverlapping(b *testing.B) {
-	benchInsert(b, 1024, 10240)
+	benchInsert(b, 1024, 0, 10240)
 }
 
-func benchInsert(b *testing.B, step, overlap int64) {
+func benchInsert(b *testing.B, step, gap, overlap int64) {
 	b.ReportAllocs()
 	for _, num := range []int{1, 10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(num), func(sb *testing.B) {
+			sb.SetBytes(1)
 			sb.RunParallel(func(pb *testing.PB) {
 				ovs := make(Intervals[int64], 0, num)
 
@@ -159,7 +186,7 @@ func benchInsert(b *testing.B, step, overlap int64) {
 					n++
 					if n >= len(ivs) {
 						ovs = ovs[:0]
-						randIntervals(ivs, step, overlap)
+						randIntervals(ivs, step, gap, overlap)
 						n = 0
 					}
 
@@ -170,22 +197,62 @@ func benchInsert(b *testing.B, step, overlap int64) {
 	}
 }
 
-func randIntervals(vs Intervals[int64], step, overlap int64) {
+func randIntervals(vs Intervals[int64], step, gap, overlap int64) {
 	s := int64(0)
-	for i := 0; i < len(vs); i++ {
-		l := rand.Int63n(step)
+	for i := range vs {
+		l := rand.Int64N(step) //nolint:gosec // Not security sensitive.
 		e := s + l
 
 		v := Interval[int64]{s, e}
 		if overlap > 0 {
-			v.End += rand.Int63n(overlap)
+			v.End += rand.Int64N(overlap) //nolint:gosec // Not security sensitive.
 		}
 		vs[i] = v
 
-		s = e
+		s = e + gap
 	}
 
 	rand.Shuffle(len(vs), func(i, j int) {
 		vs[i], vs[j] = vs[j], vs[i]
 	})
+}
+
+func BenchmarkSearchDisjoint(b *testing.B) {
+	benchSearch(b, 1024, 1, 0)
+}
+
+func BenchmarkSearchMerged(b *testing.B) {
+	benchSearch(b, 1024, 0, 0)
+}
+
+func benchSearch(b *testing.B, step, gap, overlap int64) {
+	b.ReportAllocs()
+	for _, num := range []int{1, 10, 100, 1000, 10000} {
+		b.Run(strconv.Itoa(num), func(sb *testing.B) {
+			sb.SetBytes(1)
+			sb.RunParallel(func(pb *testing.PB) {
+				ivs := make(Intervals[int64], num)
+				randIntervals(ivs, step, gap, overlap)
+
+				ovs := make(Intervals[int64], 0, len(ivs))
+				for _, iv := range ivs {
+					ovs = ovs.Insert(iv)
+				}
+
+				start := ovs[0].Start
+				end := ovs[len(ovs)-1].End
+
+				n := end
+
+				for pb.Next() {
+					n++
+					if n >= end {
+						n = start
+					}
+
+					_, _ = ovs.Search(n)
+				}
+			})
+		})
+	}
 }
